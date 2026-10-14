@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Audio Visualizer
+GenericName=Audio Visualizer
+Comment=System-audio visualizer with OLED always-on mode for phone
+Keywords=audio;visualizer;music;spectrum;
+Exec=@ROOT@/start.sh
+TryExec=@ROOT@/start.sh
+Icon=audio-visualizer
+Terminal=false
+Categories=AudioVideo;Audio;
+StartupNotify=true
+X-KDE-StartupNotify=true

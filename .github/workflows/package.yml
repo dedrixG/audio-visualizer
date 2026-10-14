@@ -1,0 +1,49 @@
+name: Package
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m unittest tests/test_pcm.py
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install -r requirements-windows.txt pyinstaller
+      - run: pyinstaller packaging/windows/audio-visualizer.spec
+      - name: Assemble the one-folder package
+        shell: pwsh
+        run: |
+          Copy-Item install.bat, uninstall.bat, start.bat, README.md, LICENSE dist\AudioVisualizer\
+          if (Test-Path dist\AudioVisualizer\windows) { } else { New-Item -ItemType Directory dist\AudioVisualizer\windows | Out-Null }
+          Copy-Item windows\*.ps1 dist\AudioVisualizer\windows\
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AudioVisualizer-windows
+          path: dist/AudioVisualizer
+      - name: Zip one folder
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: Compress-Archive -Path dist\AudioVisualizer -DestinationPath AudioVisualizer-windows.zip
+      - uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/v')
+        with:
+          files: AudioVisualizer-windows.zip
+          generate_release_notes: true

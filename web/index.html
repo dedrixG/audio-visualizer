@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#000000" />
+  <meta name="color-scheme" content="dark" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black" />
+  <meta name="apple-mobile-web-app-title" content="Visualizer" />
+  <title>Audio Visualizer</title>
+  <link rel="manifest" href="manifest.json" />
+  <link rel="icon" type="image/svg+xml" href="icon.svg" />
+  <link rel="apple-touch-icon" href="icon-192.png" />
+  <link rel="stylesheet" href="app.css?v=5" />
+</head>
+<body>
+  <canvas id="viz" aria-hidden="true"></canvas>
+
+  <div id="clock" class="clock hidden" aria-hidden="true">
+    <div class="clock-time" id="clockTime">00:00</div>
+    <div class="clock-date" id="clockDate"></div>
+  </div>
+
+  <header id="topbar" class="chrome">
+    <div class="brand">
+      <span class="mark" aria-hidden="true"></span>
+      <span class="title">Audio Visualizer</span>
+    </div>
+    <div class="status" id="status">Tap Start</div>
+  </header>
+
+  <div id="toast" class="toast hidden" role="status"></div>
+
+  <aside id="connect" class="connect chrome hidden">
+    <p class="connect-kicker">Phone</p>
+    <p class="connect-url" id="phoneUrl"></p>
+    <p class="connect-hint">Same Wi-Fi or Tailscale. Chrome → Add to Home screen. Then open Always-On.</p>
+    <button type="button" class="btn ghost" id="copyUrl">Copy URL</button>
+  </aside>
+
+  <footer id="dock" class="dock chrome">
+    <div class="row">
+      <button type="button" class="btn primary" id="btnStart">Start</button>
+      <div class="seg" role="radiogroup" aria-label="Audio source" id="sourceSeg">
+        <button type="button" class="seg-btn on" data-source="system">System</button>
+        <button type="button" class="seg-btn" data-source="mic">Mic</button>
+        <button type="button" class="seg-btn" data-source="file">File</button>
+      </div>
+      <input id="filePick" type="file" accept="audio/*,video/*" hidden />
+    </div>
+    <div class="row">
+      <div class="seg wrap" role="radiogroup" aria-label="Style" id="styleSeg">
+        <button type="button" class="seg-btn on" data-style="bars">Bars</button>
+        <button type="button" class="seg-btn" data-style="mirror">Mirror</button>
+        <button type="button" class="seg-btn" data-style="radial">Radial</button>
+        <button type="button" class="seg-btn" data-style="wave">Wave</button>
+        <button type="button" class="seg-btn" data-style="orbit">Orbit</button>
+        <button type="button" class="seg-btn" data-style="gyro">Gyro</button>
+        <button type="button" class="seg-btn" data-style="helix">Helix</button>
+        <button type="button" class="seg-btn" data-style="aod">Always-On</button>
+      </div>
+    </div>
+    <div class="row sliders">
+      <label>Gain <input id="gain" type="range" min="0.4" max="4" step="0.05" value="1.35" /></label>
+      <label>Glow <input id="glow" type="range" min="0" max="1" step="0.05" value="0.65" /></label>
+      <label>Dim <input id="dim" type="range" min="0.15" max="1" step="0.05" value="1" /></label>
+    </div>
+    <div class="row">
+      <div class="seg" role="radiogroup" aria-label="Color" id="themeSeg">
+        <button type="button" class="seg-btn swatch on" data-theme="ion" title="Ion">Ion</button>
+        <button type="button" class="seg-btn swatch" data-theme="magma" title="Magma">Magma</button>
+        <button type="button" class="seg-btn swatch" data-theme="aurora" title="Aurora">Aurora</button>
+        <button type="button" class="seg-btn swatch" data-theme="mono" title="Mono">Mono</button>
+        <button type="button" class="seg-btn swatch" data-theme="shuffle" title="Shuffle by song">Shuffle</button>
+      </div>
+      <label class="timer-field" id="shuffleTimer" title="Rotate the color scheme on a timer. This overrides the selected color and song shuffle.">
+        <span id="shuffleTimerLabel">Shuffle every</span>
+        <select id="shuffleEvery" aria-label="Shuffle timer">
+          <option value="0">Off</option>
+          <option value="15">15s</option>
+          <option value="30">30s</option>
+          <option value="60">1 min</option>
+          <option value="120">2 min</option>
+          <option value="300">5 min</option>
+          <option value="600">10 min</option>
+        </select>
+      </label>
+      <button type="button" class="btn ghost" id="btnFull">Fullscreen</button>
+      <button type="button" class="btn ghost" id="btnHide">Hide UI</button>
+    </div>
+    <p class="hint" id="hint">System audio is whatever this PC is playing. On the phone, Always-On is the nightstand mode — true Samsung AOD cannot run a custom visualizer.</p>
+  </footer>
+
+  <audio id="fileAudio" playsinline></audio>
+  <script src="app.js?v=5"></script>
+</body>
+</html>
