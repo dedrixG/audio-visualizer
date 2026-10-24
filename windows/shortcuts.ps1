@@ -40,7 +40,7 @@ foreach ($place in @("Desktop", "Programs")) {
 New-Item -Path $key -Force | Out-Null
 Set-ItemProperty -Path $key -Name DisplayName -Value "Audio Visualizer"
 Set-ItemProperty -Path $key -Name Publisher -Value "dedrixG"
-Set-ItemProperty -Path $key -Name DisplayVersion -Value "1.0.0"
+Set-ItemProperty -Path $key -Name DisplayVersion -Value "1.0.1"
 Set-ItemProperty -Path $key -Name InstallLocation -Value $Root
 Set-ItemProperty -Path $key -Name UninstallString -Value "`"$(Join-Path $Root 'uninstall.bat')`""
 New-ItemProperty -Path $key -Name NoModify -PropertyType DWord -Value 1 -Force | Out-Null
