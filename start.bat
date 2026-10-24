@@ -2,22 +2,23 @@
 setlocal EnableExtensions
 cd /d "%~dp0"
 set "PORT=8765"
+if not defined BIND set "BIND=127.0.0.1"
 if exist "%~dp0AudioVisualizer.exe" (
-  "%~dp0AudioVisualizer.exe" --port %PORT% --open
+  "%~dp0AudioVisualizer.exe" --port %PORT% --bind %BIND% --open
   exit /b %ERRORLEVEL%
 )
 if exist "%~dp0python\python.exe" (
-  "%~dp0python\python.exe" "%~dp0server.py" --port %PORT% --open
+  "%~dp0python\python.exe" "%~dp0server.py" --port %PORT% --bind %BIND% --open
   exit /b %ERRORLEVEL%
 )
 where py >nul 2>&1
 if not errorlevel 1 (
-  py -3 "%~dp0server.py" --port %PORT% --open
+  py -3 "%~dp0server.py" --port %PORT% --bind %BIND% --open
   exit /b %ERRORLEVEL%
 )
 where python >nul 2>&1
 if not errorlevel 1 (
-  python "%~dp0server.py" --port %PORT% --open
+  python "%~dp0server.py" --port %PORT% --bind %BIND% --open
   exit /b %ERRORLEVEL%
 )
 echo No Audio Visualizer runtime in this folder.
