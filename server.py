@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Local HTTP + WebSocket server for the audio visualizer.
 
-Streams the PipeWire/Pulse default-sink monitor (what's playing) to browsers
-on this PC and on the LAN / Tailscale (phone).
+Streams the PipeWire/Pulse default-sink monitor (what's playing) to the
+page this process serves. Listens on 127.0.0.1 unless --bind is wider.
+--bind 0.0.0.0 reaches a phone on Wi-Fi or Tailscale. Anyone who can open
+that URL can hear playback. Other websites cannot.
 """
 
 from __future__ import annotations
@@ -10,6 +12,7 @@ from __future__ import annotations
 import argparse
 import array
 import hashlib
+import ipaddress
 import base64
 import json
 import os
@@ -36,6 +39,8 @@ def bundle_root() -> Path:
 WEB_ROOT = bundle_root() / "web"
 # Bumps the launch URL so an already-installed cache-first page fetches this build.
 PAGE_REV = "5"
+# This computer only. Pass --bind 0.0.0.0 for the phone on Wi-Fi or Tailscale.
+DEFAULT_BIND = "127.0.0.1"
 WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 SAMPLE_RATE = 44100
 CHUNK_FRAMES = 1024  # stereo frames per read
@@ -575,6 +580,116 @@ class WebSocketClient:
             self.sock.sendall(header + payload)
 
 
+def listens_on_network(bind: str) -> bool:
+    """True when ``bind`` is not a loopback address."""
+    host = bind.strip().lower()
+    if host.startswith("[") and host.endswith("]"):
+        host = host[1:-1]
+    return host not in {"127.0.0.1", "localhost", "::1"}
+
+
+def _normalized_host(hostname: str) -> str:
+    return hostname.strip().lower().rstrip(".")
+
+
+def _ip_address(hostname: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address | None:
+    try:
+        return ipaddress.ip_address(hostname)
+    except ValueError:
+        return None
+
+
+def _origin_port(parsed) -> int | None:
+    """Port of a path-less http origin, or None when it is not one."""
+    if (parsed.scheme or "").lower() != "http":
+        return None
+    if parsed.username is not None or parsed.password is not None:
+        return None
+    if parsed.path or parsed.params or parsed.query or parsed.fragment:
+        return None
+    try:
+        port = parsed.port
+        hostname = parsed.hostname
+    except ValueError:
+        return None
+    if not hostname:
+        return None
+    if port is None:
+        port = 80
+    if not 1 <= port <= 65535:
+        return None
+    return port
+
+
+def _request_ip(host_header: str | None, server_port: int) -> str | None:
+    """IP literal from a Host header whose port is ``server_port``.
+
+    A missing port is port 80. DNS names are ignored so a name that merely
+    resolves to this machine cannot satisfy the check.
+    """
+    if not host_header:
+        return None
+    raw = host_header.strip()
+    if not raw or any(ch in raw for ch in " @/?#"):
+        return None
+    if raw.startswith("["):
+        end = raw.find("]")
+        if end <= 1:
+            return None
+        hostname = raw[1:end]
+        rest = raw[end + 1 :]
+        if rest == "":
+            port = 80
+        elif rest.startswith(":") and rest[1:].isdigit():
+            port = int(rest[1:])
+        else:
+            return None
+    else:
+        if raw.count(":") > 1:
+            return None
+        if ":" in raw:
+            hostname, _, port_text = raw.rpartition(":")
+            if not port_text.isdigit():
+                return None
+            port = int(port_text)
+        else:
+            hostname = raw
+            port = 80
+    if port != server_port:
+        return None
+    address = _ip_address(_normalized_host(hostname))
+    if address is None:
+        return None
+    return address.compressed
+
+
+def origin_allowed(origin: str | None, host_header: str | None, port: int) -> bool:
+    """True when ``origin`` is the page this server is serving on ``port``.
+
+    Loopback (localhost, 127.0.0.1, ::1) is the desktop page. A phone is
+    allowed only for the http://<ip>:<port> the request came in on.
+    """
+    if origin is None or not isinstance(port, int) or not 1 <= port <= 65535:
+        return False
+    parsed = urlparse(origin.strip())
+    origin_port = _origin_port(parsed)
+    if origin_port != port:
+        return False
+    try:
+        hostname = parsed.hostname or ""
+    except ValueError:
+        return False
+    hostname = _normalized_host(hostname)
+    if hostname == "localhost":
+        return True
+    address = _ip_address(hostname)
+    if address is None:
+        return False
+    if address.is_loopback:
+        return True
+    return _request_ip(host_header, port) == address.compressed
+
+
 class VizHandler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
     server_version = "AudioVisualizer/1.0"
@@ -603,8 +718,10 @@ class VizHandler(BaseHTTPRequestHandler):
             "local": f"http://127.0.0.1:{port}/?v={PAGE_REV}",
             "lan": [],
         }
-        for ip in local_ips():
-            urls["lan"].append(f"http://{ip}:{port}/?v={PAGE_REV}")
+        bind_host = str(self.server.server_address[0])
+        if listens_on_network(bind_host):
+            for ip in local_ips():
+                urls["lan"].append(f"http://{ip}:{port}/?v={PAGE_REV}")
         return urls
 
     def _json(self, obj: dict) -> None:
@@ -613,7 +730,6 @@ class VizHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
-        self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
         self.wfile.write(body)
 
@@ -647,6 +763,10 @@ class VizHandler(BaseHTTPRequestHandler):
         key = self.headers.get("Sec-WebSocket-Key")
         if not key or self.headers.get("Upgrade", "").lower() != "websocket":
             self.send_error(HTTPStatus.BAD_REQUEST, "Expected WebSocket upgrade")
+            return
+        port = int(self.server.server_address[1])
+        if not origin_allowed(self.headers.get("Origin"), self.headers.get("Host"), port):
+            self.send_error(HTTPStatus.FORBIDDEN, "Origin not allowed")
             return
         accept = base64.b64encode(hashlib.sha1((key + WS_GUID).encode()).digest()).decode()
         self.send_response(HTTPStatus.SWITCHING_PROTOCOLS)
@@ -795,7 +915,11 @@ def _open_browser_windows(url: str) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Audio visualizer server")
     parser.add_argument("--port", type=int, default=8765)
-    parser.add_argument("--bind", default="0.0.0.0")
+    parser.add_argument(
+        "--bind",
+        default=DEFAULT_BIND,
+        help="Listen address (default %(default)s). Use 0.0.0.0 for a phone on Wi-Fi or Tailscale.",
+    )
     parser.add_argument("--open", action="store_true", help="Open desktop app window")
     args = parser.parse_args()
 
@@ -817,9 +941,13 @@ def main() -> int:
     port = httpd.server_address[1]
     print("Audio Visualizer", flush=True)
     print(f"  This PC:     http://127.0.0.1:{port}/?v={PAGE_REV}", flush=True)
-    for ip in local_ips():
-        kind = "Tailscale" if ip.startswith("100.") else "Phone Wi-Fi"
-        print(f"  {kind:12} http://{ip}:{port}/?v={PAGE_REV}", flush=True)
+    if listens_on_network(args.bind):
+        for ip in local_ips():
+            kind = "Tailscale" if ip.startswith("100.") else "Phone Wi-Fi"
+            print(f"  {kind:12} http://{ip}:{port}/?v={PAGE_REV}", flush=True)
+        print("  Warning:     anyone on that network who opens the URL can hear playback.", flush=True)
+    else:
+        print("  Phone:       off. Start with --bind 0.0.0.0 to share it.", flush=True)
     print("  Source:      default sink monitor (system playback)", flush=True)
     print("  Ctrl+C to stop.", flush=True)
 
